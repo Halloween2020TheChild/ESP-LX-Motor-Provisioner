@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <lx16a-servo.h>
 LX16ABus servoBus;
-LX16AServo servo(&servoBus, LX16A_BROADCAST_ID);// send these commands to any motor on the bus
-int id =3;
+LX16AServo servo(&servoBus, LX16A_BROADCAST_ID); // send these commands to any motor on the bus
+int id = 1;
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -19,95 +19,108 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 #define LOGO_HEIGHT   16
 #define LOGO_WIDTH    16
-static const unsigned char PROGMEM logo_bmp[] =
-{ B00000000, B11000000,
-  B00000001, B11000000,
-  B00000001, B11000000,
-  B00000011, B11100000,
-  B11110011, B11100000,
-  B11111110, B11111000,
-  B01111110, B11111111,
-  B00110011, B10011111,
-  B00011111, B11111100,
-  B00001101, B01110000,
-  B00011011, B10100000,
-  B00111111, B11100000,
-  B00111111, B11110000,
-  B01111100, B11110000,
-  B01110000, B01110000,
-  B00000000, B00110000 };
+
 void setup() {
-	servoBus.beginOnePinMode(&Serial2,14);
+	servoBus.beginOnePinMode(&Serial2, 14);
 
 	Serial.begin(115200);
 
-	  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-	  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3D)) { // Address 0x3D for 128x64
-	    Serial.println(F("SSD1306 allocation failed"));
-	    for(;;); // Don't proceed, loop forever
-	  }
+	// SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+	if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3D)) { // Address 0x3D for 128x64
+		Serial.println(F("SSD1306 allocation failed"));
+		for (;;)
+			; // Don't proceed, loop forever
+	}
 
-	  // Show initial display buffer contents on the screen --
-	  // the library initializes this with an Adafruit splash screen.
-	  display.display();
-	  delay(2000); // Pause for 2 seconds
+	// Show initial display buffer contents on the screen --
+	// the library initializes this with an Adafruit splash screen.
+	display.display();
+	delay(2000); // Pause for 2 seconds
 
-	  // Clear the buffer
-	  display.clearDisplay();
+	// Clear the buffer
+	display.clearDisplay();
 
-	  // Draw a single pixel in white
-	  display.drawPixel(10, 10, SSD1306_WHITE);
+	// Draw a single pixel in white
+	display.drawPixel(10, 10, SSD1306_WHITE);
 
-	  // Show the display buffer on the screen. You MUST call display() after
-	  // drawing commands to make them visible on screen!
-	  display.display();
-	  delay(2000);
-	  // display.display() is NOT necessary after every single drawing command,
-	  // unless that's what you want...rather, you can batch up a bunch of
-	  // drawing operations and then update the screen all at once by calling
-	  // display.display(). These examples demonstrate both approaches...
+	// Show the display buffer on the screen. You MUST call display() after
+	// drawing commands to make them visible on screen!
+	display.display();
+	pinMode(16, INPUT_PULLUP);
+	pinMode(19, INPUT_PULLUP);
+	pinMode(18, INPUT_PULLUP);
 
-	  testdrawline();      // Draw many lines
-
-	  testdrawrect();      // Draw rectangles (outlines)
-
-	  testfillrect();      // Draw rectangles (filled)
-
-	  testdrawcircle();    // Draw circles (outlines)
-
-	  testfillcircle();    // Draw circles (filled)
-
-	  testdrawroundrect(); // Draw rounded rectangles (outlines)
-
-	  testfillroundrect(); // Draw rounded rectangles (filled)
-
-	  testdrawtriangle();  // Draw triangles (outlines)
-
-	  testfilltriangle();  // Draw triangles (filled)
-
-	  testdrawchar();      // Draw characters of the default font
-
-	  testdrawstyles();    // Draw 'stylized' characters
-
-	  testscrolltext();    // Draw scrolling text
-
-	  testdrawbitmap();    // Draw a small bitmap image
-
-	  // Invert and restore display, pausing in-between
-	  display.invertDisplay(true);
-	  delay(1000);
-	  display.invertDisplay(false);
-	  delay(1000);
-
-	  testanimate(logo_bmp, LOGO_WIDTH, LOGO_HEIGHT); // Animate bitmaps
 }
 
+enum buttonstate {
+	UP_PRESSED, DOWN_PRESSED, GO_Pressed, IDLE
+} state = IDLE;
+
 void loop() {
+	delay(20);
+	switch (state) {
+	case UP_PRESSED:
+
+		if (digitalRead(16)) {
+			state = IDLE;
+			Serial.println("Up ");
+			id+=1;
+		}
+		break;
+	case DOWN_PRESSED:
+		if (digitalRead(19)) {
+			state = IDLE;
+			Serial.println("down ");
+			if(id>1)
+				id-=1;
+		}
+		break;
+	case GO_Pressed:
+		if (digitalRead(18)) {
+			state = IDLE;
+			Serial.println("go! ");
+			servo.id_write(id);
+			Serial.println("Setting to ID " + String(id));
+		}
+		break;
+	case IDLE:
+		if (!digitalRead(16)) {
+			state = UP_PRESSED;
+		}
+		if (!digitalRead(19)) {
+			state = DOWN_PRESSED;
+		}
+		if (!digitalRead(18)) {
+			state = GO_Pressed;
+		}
+		break;
+
+	}
+
 	// Set any motor plugged in to ID 3
 	// this INO acts as an auto-provisioner for any motor plugged in
-	servo.id_write(id);
-	Serial.println("Setting to ID "+String (id));
-	delay(200);
+	//
+	display.clearDisplay();
 
+	display.setTextSize(1);      // Normal 1:1 pixel scale
+	display.setTextColor(SSD1306_WHITE); // Draw white text
+	display.setCursor(0, 0);     // Start at top-left corner
+	display.cp437(true);         // Use full 256 char 'Code Page 437' font
+
+	// Not all the characters will fit on the display. This is normal.
+	// Library will draw what it can and the rest will be clipped.
+//	for (int16_t i = 0; i < 256; i++) {
+//		if (i == '\n')
+//			display.write(' ');
+//		else
+//			display.write(i);
+//	}
+	int idRead = servo.id_read();
+	if(idRead>0)
+		display.println("Read " + String(servo.id_read())+"\nSet To "+String(id));
+	else
+		display.println("Servo not responding");
+
+	display.display();
 }
 
