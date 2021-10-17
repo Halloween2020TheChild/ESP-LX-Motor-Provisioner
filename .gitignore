@@ -1,0 +1,10 @@
+/sloeber.ino.cpp
+/spec.d
+.pio
+.vscode
+src/*.ino.cpp
+core
+libraries
+.settings
+.cproject
+.project
