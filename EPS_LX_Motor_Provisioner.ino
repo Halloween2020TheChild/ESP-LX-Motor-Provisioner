@@ -1,8 +1,9 @@
 #include <Arduino.h>
 #include <lx16a-servo.h>
 LX16ABus servoBus;
-LX16AServo servo(&servoBus, LX16A_BROADCAST_ID); // send these commands to any motor on the bus
+LX16AServo broadcast(&servoBus, LX16A_BROADCAST_ID); // send these commands to any motor on the bus
 int id = 1;
+LX16AServo *motor = NULL;
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_I2CDevice.h>
@@ -22,18 +23,18 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #define LOGO_HEIGHT   16
 #define LOGO_WIDTH    16
 ESP32AnalogRead pot;
-
+bool motorPresent = false;
 float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
-	if(x<in_min)
+	if (x < in_min)
 		return out_min;
-	if(x>in_max)
+	if (x > in_max)
 		return out_max;
 
-    float divisor = (in_max - in_min);
-    if(divisor == 0){
-        return -1; //AVR returns -1, SAM returns 0
-    }
-    return (x - in_min) * (out_max - out_min) / divisor + out_min;
+	float divisor = (in_max - in_min);
+	if (divisor == 0) {
+		return -1; //AVR returns -1, SAM returns 0
+	}
+	return (x - in_min) * (out_max - out_min) / divisor + out_min;
 }
 void setup() {
 	servoBus.beginOnePinMode(&Serial2, 14);
@@ -55,8 +56,10 @@ void setup() {
 	// Clear the buffer
 	display.clearDisplay();
 
-	// Draw a single pixel in white
-	display.drawPixel(10, 10, SSD1306_WHITE);
+	display.setTextSize(1);      // Normal 1:1 pixel scale
+	display.setTextColor(SSD1306_WHITE); // Draw white text
+	display.setCursor(0, 0);     // Start at top-left corner
+	display.cp437(true);         // Use full 256 char 'Code Page 437' font
 
 	// Show the display buffer on the screen. You MUST call display() after
 	// drawing commands to make them visible on screen!
@@ -65,6 +68,13 @@ void setup() {
 	pinMode(19, INPUT_PULLUP);
 	pinMode(18, INPUT_PULLUP);
 	pot.attach(A1);
+	id = broadcast.id_read();
+	if (!broadcast.isCommandOk())
+		id = 1;
+	else {
+		motorPresent = true;
+		motor = new LX16AServo(&servoBus, id);
+	}
 }
 
 enum buttonstate {
@@ -72,30 +82,35 @@ enum buttonstate {
 } state = IDLE;
 
 void loop() {
+	long time = millis();
 	delay(20);
-	float potval=mapf(pot.readMiliVolts(), 110, 3100, 0, 24000);
+	uint32_t readval = analogRead(A1);
+	//Serial.println("Pot at: "+String(readval));
+	float potval = mapf(readval, 0, 4095, 0, 24000);
 	switch (state) {
 	case UP_PRESSED:
 
 		if (digitalRead(16)) {
 			state = IDLE;
 			Serial.println("Up ");
-			id+=1;
+			id += 1;
 		}
 		break;
 	case DOWN_PRESSED:
 		if (digitalRead(19)) {
 			state = IDLE;
 			Serial.println("down ");
-			if(id>1)
-				id-=1;
+			if (id > 1)
+				id -= 1;
 		}
 		break;
 	case GO_Pressed:
-		if (digitalRead(18)) {
+		if (digitalRead(18) && id > 0) {
 			state = IDLE;
 			Serial.println("go! ");
-			servo.id_write(id);
+			broadcast.id_write(id);
+			if(motor!=NULL)	delete (motor);
+			motor = new LX16AServo(&servoBus, id);
 			Serial.println("Setting to ID " + String(id));
 		}
 		break;
@@ -113,30 +128,27 @@ void loop() {
 
 	}
 
-	// Set any motor plugged in to ID 3
-	// this INO acts as an auto-provisioner for any motor plugged in
-	//
 	display.clearDisplay();
-
-	display.setTextSize(1);      // Normal 1:1 pixel scale
-	display.setTextColor(SSD1306_WHITE); // Draw white text
 	display.setCursor(0, 0);     // Start at top-left corner
-	display.cp437(true);         // Use full 256 char 'Code Page 437' font
 
-	// Not all the characters will fit on the display. This is normal.
-	// Library will draw what it can and the rest will be clipped.
-//	for (int16_t i = 0; i < 256; i++) {
-//		if (i == '\n')
-//			display.write(' ');
-//		else
-//			display.write(i);
-//	}
-	int idRead = servo.id_read();
-	if(idRead>0){
-		display.println("Read " + String(servo.id_read())+"\nSet To "+String(id)+"\n Position "+String((potval/100.0)));
-		servo.move_time(potval, 20);
-	}else
+	int idRead = broadcast.id_read();
+	if (broadcast.isCommandOk()) {
+		if (motor==NULL) {
+			motor = new LX16AServo(&servoBus, idRead);
+		}
+		motorPresent = true;
+		display.println(
+				"Read  " + String(idRead) + "\nSet To " + String(id)
+						+ "\nPos   " + String((potval / 100.0)));
+
+		motor->move_time(potval, millis() - time + 2);
+	} else {
 		display.println("Servo not responding");
+		motorPresent = false;
+		if(motor!=NULL)
+			delete (motor);
+		motor=NULL;
+	}
 
 	display.display();
 }
