@@ -5,8 +5,10 @@ LX16AServo servo(&servoBus, LX16A_BROADCAST_ID); // send these commands to any m
 int id = 1;
 #include <SPI.h>
 #include <Wire.h>
+#include <Adafruit_I2CDevice.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <ESP32AnalogRead.h>
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -19,7 +21,20 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 #define LOGO_HEIGHT   16
 #define LOGO_WIDTH    16
+ESP32AnalogRead pot;
 
+float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
+	if(x<in_min)
+		return out_min;
+	if(x>in_max)
+		return out_max;
+
+    float divisor = (in_max - in_min);
+    if(divisor == 0){
+        return -1; //AVR returns -1, SAM returns 0
+    }
+    return (x - in_min) * (out_max - out_min) / divisor + out_min;
+}
 void setup() {
 	servoBus.beginOnePinMode(&Serial2, 14);
 
@@ -49,7 +64,7 @@ void setup() {
 	pinMode(16, INPUT_PULLUP);
 	pinMode(19, INPUT_PULLUP);
 	pinMode(18, INPUT_PULLUP);
-
+	pot.attach(A1);
 }
 
 enum buttonstate {
@@ -58,6 +73,7 @@ enum buttonstate {
 
 void loop() {
 	delay(20);
+	float potval=mapf(pot.readMiliVolts(), 110, 3100, 0, 24000);
 	switch (state) {
 	case UP_PRESSED:
 
@@ -116,9 +132,10 @@ void loop() {
 //			display.write(i);
 //	}
 	int idRead = servo.id_read();
-	if(idRead>0)
-		display.println("Read " + String(servo.id_read())+"\nSet To "+String(id));
-	else
+	if(idRead>0){
+		display.println("Read " + String(servo.id_read())+"\nSet To "+String(id)+"\n Position "+String((potval/100.0)));
+		servo.move_time(potval, 20);
+	}else
 		display.println("Servo not responding");
 
 	display.display();
